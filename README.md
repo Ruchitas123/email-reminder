@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) tool that allows Cursor AI to read Jira issue des
 
 1. **Install the dependencies and build the package**:
    ```bash
-   npm install -g jira-mcp
+   npm install
    npm run build
    ```
 
@@ -17,7 +17,7 @@ A Model Context Protocol (MCP) tool that allows Cursor AI to read Jira issue des
    - Open Cursor
    - Go to Settings > MCP Tools
    - Click "Add Tool"
-   - Enter the command: `node /parent_folder/cursor-jira-mcp/build/index.js`
+   - Enter the command: `node /<clone_repo_parennt>/cursor-jira-mcp/build/index.js`
    - Click "Add"
 
 ## Using with Cursor AI
