@@ -50,12 +50,13 @@ You: What feedback did the team leave on TEAM-456?
 Cursor AI: Let me get the comments from that Jira issue...
 [Cursor AI retrieves and displays the issue comments]
 ```
+## Recommendations
+
+1. Try with `jira.dev.corp.adobe.com` first as the jira URL, if that doesn't work then use `jira.corp.adobe.com`.
 
 ## Troubleshooting
 
 If the tool isn't working properly in Cursor:
 
-1. Verify your credentials are correctly set in your shell profile
-2. Try running `jira-mcp` directly in your terminal to check for errors
-3. Ensure you have the necessary permissions to access the Jira issues
-4. Restart Cursor after making any configuration changes 
+1. Verify your credentials are correctly set in your .env folder
+2. Try running `npm run start` to check if JIRA authentication is successful.
