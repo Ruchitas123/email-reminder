@@ -4,16 +4,23 @@ A Model Context Protocol (MCP) tool that allows Cursor AI to read Jira issue des
 
 ## Setup in Cursor
 
-1. **Install the dependencies and build the package**:
+
+1. **Create .env file**
+   - Create a new file named .env in the root folder of this repo.
+   - Copy the contents from .env.example into the .env
+   - Enter your jira username and password for using the basic authentication flow
+   - Try with `jira.dev.corp.company.com` first as the jira URL, if that doesn't work then use `jira.corp.comapny.com`.
+
+2. **Install the dependencies and build the package**:
    ```bash
    npm install
    npm run build
    ```
 
-2. **Configure your Jira credentials** in the .env file:
+3. **Configure your Jira credentials** in the .env file:
    Make a copy of .env.example as .env and add all your credentials in that file
 
-3. **Register the tool in Cursor**:
+4. **Register the tool in Cursor**:
    - Open Cursor
    - Go to Settings > MCP Tools
    - Click "Add Tool"
@@ -50,9 +57,6 @@ You: What feedback did the team leave on TEAM-456?
 Cursor AI: Let me get the comments from that Jira issue...
 [Cursor AI retrieves and displays the issue comments]
 ```
-## Recommendations
-
-1. Try with `jira.dev.corp.company.com` first as the jira URL, if that doesn't work then use `jira.corp.comapny.com`.
 
 ## Troubleshooting
 
