@@ -52,7 +52,7 @@ Cursor AI: Let me get the comments from that Jira issue...
 ```
 ## Recommendations
 
-1. Try with `jira.dev.corp.adobe.com` first as the jira URL, if that doesn't work then use `jira.corp.adobe.com`.
+1. Try with `jira.dev.corp.company.com` first as the jira URL, if that doesn't work then use `jira.corp.comapny.com`.
 
 ## Troubleshooting
 
