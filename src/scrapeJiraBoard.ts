@@ -1,11 +1,9 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import JiraApi from 'jira-client';
-import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import JiraService, { JiraIssue } from './jiraService.js';
 
 // Get current directory for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -13,7 +11,9 @@ const __dirname = path.dirname(__filename);
 
 // Force load environment variables from .env file, overriding system variables
 console.log('🔧 Loading environment variables from .env file...');
-const envPath = path.resolve(__dirname, '../.env');
+
+// For ES modules, we need to be more explicit about the path
+const envPath = path.resolve(process.cwd(), '.env');
 console.log(`📁 Looking for .env file at: ${envPath}`);
 
 if (fs.existsSync(envPath)) {
@@ -28,8 +28,13 @@ if (fs.existsSync(envPath)) {
 console.log('🔍 Environment variables loaded:');
 console.log(`  SMTP_SERVER: ${process.env.SMTP_SERVER || 'NOT SET'}`);
 console.log(`  JIRA_USERNAME: ${process.env.JIRA_USERNAME || 'NOT SET'}`);
+console.log(`  JIRA_PASSWORD: ${process.env.JIRA_PASSWORD ? 'SET' : 'NOT SET'}`);
 console.log(`  SENDER_EMAIL: ${process.env.SENDER_EMAIL || 'NOT SET'}`);
 console.log(`  Doc_Email1: ${process.env.Doc_Email1 || 'NOT SET'}`);
+
+// Map old variable names to new ones for the Jira service
+process.env.JIRA_EMAIL = process.env.JIRA_USERNAME;
+process.env.JIRA_API_TOKEN = process.env.JIRA_PASSWORD;
 
 // Check if required environment variables are set
 const requiredEnvVars = [
@@ -53,14 +58,8 @@ console.log(`✅ Using SMTP_SERVER: ${process.env.SMTP_SERVER}`);
 console.log(`✅ Using SENDER_EMAIL: ${process.env.SENDER_EMAIL}`);
 console.log(`✅ Using smtp_username: ${process.env.smtp_username}`);
 
-interface Issue {
-    key: string;
-    summary: string;
-    status: string;
-    assignee: string;
-    issueType?: string;
-    priority?: string;
-}
+// Use the JiraIssue interface from the service
+type Issue = JiraIssue;
 
 interface FormattedIssues {
     summary: string;
@@ -211,7 +210,7 @@ async function sendEmail(issues: Issue[]): Promise<void> {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${issues.map((issue, index) => `
+                                        ${issues.map((issue: Issue, index: number) => `
                                             <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafc'}; border-bottom: 1px solid #dfe1e6;">
                                                 <td style="border: 1px solid #dfe1e6; padding: 12px 16px;">
                                                     <a href="https://jira.corp.adobe.com/browse/${issue.key}" style="color: #0052cc; text-decoration: none; font-weight: 500; font-size: 14px;">${issue.key}</a>
@@ -269,314 +268,46 @@ async function sendEmail(issues: Issue[]): Promise<void> {
     }
 }
 
-async function fetchJiraIssuesFromScrumBoard(rapidViewId: string): Promise<Issue[]> {
-    console.log('🚀 Extracting REAL issues from scrum board - MANUAL AUTH...');
-    
-    const browser = await puppeteer.launch({ 
-        headless: false, // Make visible for manual authentication
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--start-maximized'
-        ],
-        defaultViewport: null
-    });
+async function fetchJiraIssuesFromBoard(rapidViewId: string): Promise<Issue[]> {
+    console.log('🚀 Fetching issues from Jira board using REST API...');
     
     try {
-        const page = await browser.newPage();
+        const jiraService = new JiraService();
         
-        const boardUrl = `https://jira.corp.adobe.com/secure/RapidBoard.jspa?rapidView=${rapidViewId}`;
-        console.log(`🔄 Opening scrum board: ${boardUrl}`);
-        console.log('');
-        console.log('🖥️  MANUAL AUTHENTICATION APPROACH:');
-        console.log('   1. Browser will open visibly');
-        console.log('   2. Complete any Okta authentication manually if prompted');
-        console.log('   3. System will automatically continue once on scrum board');
-        console.log('   4. No clicking or automation required - just authenticate');
-        console.log('');
-        
-        // Get expected email from environment
-        const expectedEmail = process.env.JIRA_USERNAME || '';
-        console.log(`📧 Expected login email: ${expectedEmail}`);
-        
-        // Navigate to board
-        await page.goto(boardUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        
-        // Simple approach: Wait for user to manually complete authentication if needed
-        console.log('⏳ Waiting for board to be accessible...');
-        console.log('📝 If you see Okta authentication, please complete it manually');
-        console.log('🎯 System will continue automatically once on the scrum board');
-        
-        // Wait for the scrum board to be accessible
-        let boardReady = false;
-        let attempts = 0;
-        const maxAttempts = 60; // 10 minutes total
-        
-        while (!boardReady && attempts < maxAttempts) {
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-            
-            try {
-                const currentUrl = page.url();
-                console.log(`📍 Check ${attempts}/${maxAttempts}: ${currentUrl.includes('RapidBoard') ? '✅ ON SCRUM BOARD' : '⏳ Waiting for authentication...'}`);
-                
-                if (currentUrl.includes('jira.corp.adobe.com') && currentUrl.includes('RapidBoard')) {
-                    console.log('🎉 Scrum board detected! Proceeding with data extraction...');
-                    boardReady = true;
-                    break;
-                }
-                
-                if (attempts % 6 === 0) { // Every minute
-                    console.log(`⏳ Still waiting... (${Math.floor(attempts/6)} minutes elapsed)`);
-                    console.log(`📍 Current URL: ${currentUrl}`);
-                }
-            } catch (error) {
-                console.log(`⚠️ Check ${attempts} failed, continuing...`);
-            }
+        // Test connection first
+        const connectionTest = await jiraService.testConnection();
+        if (!connectionTest) {
+            throw new Error('Failed to connect to Jira API. Please check your credentials.');
         }
         
-        if (!boardReady) {
-            throw new Error('Timeout waiting for scrum board access - please ensure authentication is completed');
+        // Get board info
+        await jiraService.getBoardInfo(rapidViewId);
+        
+        // Try to get active sprint issues first
+        let issues = await jiraService.getActiveSprintIssues(rapidViewId);
+        
+        // If no active sprint issues, get all board issues
+        if (issues.length === 0) {
+            console.log('📋 No active sprint found, fetching all board issues...');
+            issues = await jiraService.getBoardIssues(rapidViewId);
         }
-        
-        // Wait for board to fully load
-        console.log('⏳ Waiting for scrum board to fully load...');
-        await new Promise(resolve => setTimeout(resolve, 15000)); // Increased wait time
-        
-        // Wait for dynamic content to load
-        console.log('⏳ Waiting for dynamic content to load...');
-        try {
-            await page.waitForSelector('.ghx-issue, .js-issue, [data-issue-key]', { timeout: 10000 });
-            console.log('✅ Issue elements detected on page');
-        } catch (error) {
-            console.log('⚠️ No issue elements detected, continuing anyway...');
-        }
-        
-        // Extract ALL real issues from the scrum board
-        console.log('🔍 Extracting REAL issues from scrum board (preferring CQDOC)...');
-        const issues = await page.evaluate(() => {
-            const extractedIssues: any[] = [];
-            
-            console.log('🔍 Analyzing scrum board for issues with full details...');
-            
-            // Debug: Check what's on the page
-            console.log(`Page title: ${document.title}`);
-            console.log(`Page URL: ${window.location.href}`);
-            console.log(`Body classes: ${document.body.className}`);
-            
-            // First, let's focus on the actual scrum board content area
-            const boardContent = document.querySelector('#ghx-pool, .ghx-pool, .js-pool, .ghx-work, .ghx-board-content, .rapid-board-content') ||
-                                document.querySelector('[data-rapid-view-id]') ||
-                                document.querySelector('.ghx-swimlane-header') ||
-                                document.body;
-            
-            console.log(`Analyzing board content area: ${boardContent?.className || 'document.body'}`);
-            console.log(`Board content element tag: ${boardContent?.tagName}`);
-            console.log(`Board content text length: ${boardContent?.textContent?.length || 0}`);
-            
-            // Debug: Check for any CQDOC text on the page first
-            const pageText = document.body.textContent || '';
-            const cqdocInPage = pageText.match(/CQDOC-\d+/g);
-            console.log(`🔍 CQDOC issues found in page text: ${cqdocInPage?.length || 0}`);
-            if (cqdocInPage && cqdocInPage.length > 0) {
-                console.log(`CQDOC issues: ${cqdocInPage.slice(0, 5).join(', ')}${cqdocInPage.length > 5 ? '...' : ''}`);
-            }
-            
-            // Look for issue cards first (more reliable than text parsing)
-            const issueCardSelectors = [
-                '.ghx-issue',
-                '.js-issue',
-                '[data-issue-key]',
-                '.ghx-issue-content'
-            ];
-            
-            let foundIssues = false;
-            
-            for (const selector of issueCardSelectors) {
-                const cards = boardContent?.querySelectorAll(selector) || [];
-                console.log(`Found ${cards.length} cards with selector: ${selector}`);
-                
-                if (cards.length > 0) {
-                    foundIssues = true;
-                    cards.forEach((card, index) => {
-                        const cardText = card.textContent || '';
-                        
-                        // Extract issue key
-                        const issueKey = card.getAttribute('data-issue-key') ||
-                                       cardText.match(/[A-Z]{2,}-\d+/)?.[0];
-                        
-                        if (issueKey) {
-                            console.log(`Processing card ${index + 1}: ${issueKey}`);
-                            
-                            // Extract summary/title
-                            let summary = `Task for ${issueKey}`;
-                            const summarySelectors = [
-                                '.ghx-summary',
-                                '.issue-summary', 
-                                '.summary',
-                                '.ghx-issue-content',
-                                '.ghx-key-summary'
-                            ];
-                            
-                            for (const summarySelector of summarySelectors) {
-                                const summaryElement = card.querySelector(summarySelector);
-                                if (summaryElement) {
-                                    const summaryText = summaryElement.textContent?.trim();
-                                    if (summaryText && summaryText.length > 10 && summaryText.length < 300) {
-                                        summary = summaryText.replace(issueKey, '').trim();
-                                        console.log(`  📄 Found summary: ${summary.substring(0, 50)}...`);
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            // Extract assignee
-                            let assignee = 'Unassigned';
-                            
-                            // Try to find assignee in the card text
-                            const cardTextContent = cardText.toLowerCase();
-                            if (cardTextContent.includes('assignee:')) {
-                                const assigneeMatch = cardText.match(/Assignee:\s*([^,\n\r\t]+)/i);
-                                if (assigneeMatch && assigneeMatch[1]) {
-                                    let extractedAssignee = assigneeMatch[1].trim();
-                                    extractedAssignee = extractedAssignee.replace(/^Assignee:\s*/i, '').trim();
-                                    
-                                    if (extractedAssignee && 
-                                        !extractedAssignee.toLowerCase().includes('story') &&
-                                        !extractedAssignee.toLowerCase().includes('task') &&
-                                        !extractedAssignee.toLowerCase().includes('bug') &&
-                                        !extractedAssignee.toLowerCase().includes('epic') &&
-                                        !extractedAssignee.toLowerCase().includes('cqdoc') &&
-                                        !extractedAssignee.toLowerCase().includes('new feature') &&
-                                        !extractedAssignee.toLowerCase().includes('issue type') &&
-                                        extractedAssignee.length > 2 &&
-                                        extractedAssignee.length < 50) {
-                                        assignee = extractedAssignee;
-                                        console.log(`  👤 Found assignee from text: ${assignee}`);
-                                    }
-                                }
-                            }
-                            
-                            // If not found in text, try avatar elements
-                            if (assignee === 'Unassigned') {
-                                const assigneeSelectors = [
-                                    '.ghx-avatar img',
-                                    '.assignee img',
-                                    'img[alt]',
-                                    '.ghx-assignee',
-                                    '.assignee',
-                                    '[data-tooltip*="Assignee"]',
-                                    '[title*="Assignee"]',
-                                    '.ghx-avatar',
-                                    '[data-tooltip]'
-                                ];
-                                
-                                for (const assigneeSelector of assigneeSelectors) {
-                                    const assigneeElement = card.querySelector(assigneeSelector);
-                                    if (assigneeElement) {
-                                        const alt = assigneeElement.getAttribute('alt') || 
-                                                  assigneeElement.getAttribute('title') ||
-                                                  assigneeElement.getAttribute('data-tooltip') ||
-                                                  assigneeElement.textContent?.trim();
-                                        if (alt && 
-                                            !alt.toLowerCase().includes('avatar') && 
-                                            !alt.toLowerCase().includes('story') &&
-                                            !alt.toLowerCase().includes('task') &&
-                                            !alt.toLowerCase().includes('bug') &&
-                                            !alt.toLowerCase().includes('cqdoc') &&
-                                            !alt.toLowerCase().includes('new feature') &&
-                                            !alt.toLowerCase().includes('issue type') &&
-                                            alt.length > 2 && 
-                                            alt.length < 50) {
-                                            assignee = alt.replace(/^Assignee:\s*/i, '').trim();
-                                            console.log(`  👤 Found assignee from avatar: ${assignee}`);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // Extract status from column
-                            let status = 'To Do';
-                            
-                            // Look for column this card is in
-                            let currentElement: Element | null = card;
-                            let searchAttempts = 0;
-                            const maxSearchAttempts = 10;
-                            
-                            while (currentElement && searchAttempts < maxSearchAttempts) {
-                                searchAttempts++;
-                                
-                                const elementClasses = currentElement.className || '';
-                                
-                                if (elementClasses.includes('ghx-column') || 
-                                    elementClasses.includes('column') ||
-                                    elementClasses.includes('ghx-swimlane')) {
-                                    
-                                    const columnText = currentElement.textContent?.toLowerCase() || '';
-                                    
-                                    if (columnText.includes('to do') || columnText.includes('todo')) {
-                                        status = 'To Do';
-                                    } else if (columnText.includes('qualified')) {
-                                        status = 'Qualified';
-                                    } else if (columnText.includes('ready to document')) {
-                                        status = 'Ready to Document';
-                                    } else if (columnText.includes('in progress')) {
-                                        status = 'In Progress';
-                                    } else if (columnText.includes('tech review')) {
-                                        status = 'In Tech Review';
-                                    } else if (columnText.includes('seo') || columnText.includes('editorial')) {
-                                        status = 'In SEO Optimization and Editorial Review';
-                                    } else if (columnText.includes('done') || columnText.includes('complete')) {
-                                        status = 'Done';
-                                    }
-                                    
-                                    break;
-                                }
-                                
-                                currentElement = currentElement.parentElement;
-                            }
-                            
-                            console.log(`  📊 Final status: ${status}`);
-                            
-                            // Add the extracted issue
-                            extractedIssues.push({
-                                key: issueKey,
-                                summary,
-                                status,
-                                assignee,
-                                issueType: 'Documentation',
-                                priority: 'Medium'
-                            });
-                            
-                            console.log(`  ✅ Extracted: ${issueKey} | ${assignee} | ${status}`);
-                        }
-                    });
-                    
-                    if (extractedIssues.length > 0) {
-                        break; // Found issues, no need to try other selectors
-                    }
-                }
-            }
-            
-            console.log(`🎯 Successfully extracted ${extractedIssues.length} issues from scrum board`);
-            return extractedIssues;
-        });
         
         if (issues.length === 0) {
-            throw new Error('No issues found on the scrum board - please verify the board contains issues');
+            throw new Error('No issues found on the board');
         }
         
-        console.log(`✅ Successfully extracted ${issues.length} REAL issues from scrum board!`);
+        console.log(`✅ Successfully fetched ${issues.length} issues from Jira API!`);
         
         // Display extracted issues
-        console.log('\n📋 EXTRACTED REAL ISSUES:');
+        console.log('\n📋 FETCHED ISSUES:');
         console.log('='.repeat(80));
         issues.forEach((issue, index) => {
             console.log(`${(index + 1).toString().padStart(2)}. ${issue.key}`);
             console.log(`    Summary: ${issue.summary}`);
             console.log(`    Assignee: ${issue.assignee}`);
             console.log(`    Status: ${issue.status}`);
+            console.log(`    Type: ${issue.issueType}`);
+            console.log(`    Priority: ${issue.priority}`);
             console.log('');
         });
         console.log('='.repeat(80));
@@ -584,13 +315,8 @@ async function fetchJiraIssuesFromScrumBoard(rapidViewId: string): Promise<Issue
         return issues;
         
     } catch (error) {
-        console.error('❌ Failed to extract real issues from scrum board:', error);
+        console.error('❌ Failed to fetch issues from Jira API:', error);
         throw error;
-    } finally {
-        // Keep browser open for a moment to see results
-        console.log('⏳ Keeping browser open for 10 seconds to review...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        await browser.close();
     }
 }
 
@@ -601,8 +327,8 @@ async function getJiraIssues(): Promise<void> {
         const rapidViewId = process.env.JIRA_RAPID_VIEW || '44313';
         console.log(`📋 Using Rapid View ID: ${rapidViewId}`);
         
-        // Only try to get real issues from scrum board
-        const issues = await fetchJiraIssuesFromScrumBoard(rapidViewId);
+        // Get issues from Jira board using API
+        const issues = await fetchJiraIssuesFromBoard(rapidViewId);
         
         if (issues.length === 0) {
             console.log('❌ No issues extracted from scrum board');
