@@ -1,66 +1,162 @@
-# Jira MCP Tool for Cursor
+# Jira Issue Extractor & Email Automation
 
-A Model Context Protocol (MCP) tool that allows Cursor AI to read Jira issue descriptions and comments directly within your coding environment.
+This project automates the extraction of CQDOC issues from a specific Jira scrum board and sends daily email updates with the current status of all issues.
 
-## Setup in Cursor
+## Features
 
+- **Real Issue Extraction**: Extracts actual issues from Jira scrum board using web scraping
+- **Automated Okta Authentication**: Handles Adobe Okta SSO authentication automatically
+- **Accurate Status Detection**: Detects real status from board columns (To Review, Documentation in Progress, Qualified, Close, etc.)
+- **Assignee Detection**: Extracts real assignee information for each issue
+- **Email Automation**: Sends formatted HTML emails with issue summaries and tables
+- **Screenshot Cleanup**: Automatically cleans up temporary screenshots
+- **Environment Security**: All credentials stored in .env file
 
-1. **Create .env file**
-   - Create a new file named .env in the root folder of this repo.
-   - Copy the contents from .env.example into the .env
-   - Enter your jira username and password for using the basic authentication flow
-   - Try with `jira.dev.corp.company.com` first as the jira URL, if that doesn't work then use `jira.corp.comapny.com`.
+## Project Structure
 
-2. **Install the dependencies and build the package**:
-   ```bash
-   npm install
-   npm run build
-   ```
-
-3. **Configure your Jira credentials** in the .env file:
-   Make a copy of .env.example as .env and add all your credentials in that file
-
-4. **Register the tool in Cursor**:
-   - Open Cursor
-   - Go to Settings > MCP Tools
-   - Click "Add Tool"
-   - Enter the command: `node /<clone_repo_parennt>/cursor-jira-mcp/build/index.js`
-   - Click "Add"
-
-## Using with Cursor AI
-
-Once configured, you can ask Cursor AI to retrieve Jira information using natural language:
-
-- "Show me the description for PROJ-123"
-- "What are the comments on JIRA-456?"
-- "Get details about the bug in TEAM-789"
-
-### Available Commands
-
-Cursor AI can use these commands through the MCP tool:
-
-1. **Read Issue Description**: Retrieves the full description of a Jira issue
-2. **Read Issue Comments**: Retrieves all comments on a Jira issue
-
-### Example Interactions
-
-**Asking about a Jira issue:**
 ```
-You: Can you tell me about PROJ-123?
-Cursor AI: Let me check that Jira issue for you...
-[Cursor AI retrieves and displays the issue description]
+cursor-jira-mcp2/
+├── src/
+│   └── scrapeJiraBoard.ts    # Main application file
+├── build/
+│   └── scrapeJiraBoard.js    # Compiled JavaScript
+├── package.json              # Dependencies and scripts
+├── tsconfig.json            # TypeScript configuration
+├── .env-example             # Environment variables template
+├── .gitignore              # Git ignore rules
+├── LICENSE                 # MIT License
+└── README.md               # This file
 ```
 
-**Asking about comments:**
+## Setup Instructions
+
+### 1. Install Dependencies
+```bash
+npm install
 ```
-You: What feedback did the team leave on TEAM-456?
-Cursor AI: Let me get the comments from that Jira issue...
-[Cursor AI retrieves and displays the issue comments]
+
+### 2. Environment Configuration
+Create a `.env` file in the root directory with the following variables:
+
+```env
+# SMTP Configuration
+SMTP_SERVER=authrelay.corp.adobe.com
+SMTP_PORT=587
+USE_SSL=false
+smtp_username=your-smtp-username@adobe.com
+EMAIL_PASSWORD=your-email-password
+SENDER_EMAIL=your-sender-email@adobe.com
+SENDER_NAME=Your Name
+
+# Jira Configuration
+JIRA_USERNAME=your-jira-username@adobe.com
+JIRA_PASSWORD=your-jira-password
+JIRA_RAPID_VIEW=44313
+
+# Email Recipients
+Doc_Email1=recipient1@adobe.com
+Doc_Email2=recipient2@adobe.com
+Doc_Email3=recipient3@adobe.com
 ```
+
+**Important**: Ensure your `.env` file is encoded in UTF-8 format, not UTF-16.
+
+### 3. Build the Project
+```bash
+npm run build
+```
+
+### 4. Run the Application
+```bash
+npm run start
+```
+
+## How It Works
+
+### Authentication Flow
+1. **Automated Okta**: The system automatically handles Adobe Okta SSO authentication
+2. **Email Verification**: If email matches JIRA_USERNAME, it attempts to click "Yes, it's me" automatically
+3. **Manual Fallback**: If automation fails, it falls back to manual authentication with monitoring
+
+### Issue Extraction Process
+1. **Board Access**: Opens the specified Jira scrum board (RapidView 44313)
+2. **Real Data Extraction**: Extracts actual issues from the board using comprehensive selectors
+3. **Status Detection**: Determines real status based on which column each issue is in:
+   - Qualification Required
+   - Qualified
+   - To Document
+   - Documentation in Progress
+   - To Review
+   - Documented
+   - Close
+4. **Assignee Detection**: Extracts real assignee names using multiple detection methods
+5. **Data Validation**: Validates and cleans extracted data
+
+### Email Features
+- **HTML Formatting**: Professional email template with tables and styling
+- **Issue Summary**: Count of issues by status
+- **Detailed Table**: Complete list with Issue ID, Title, Assignee, and Status
+- **Clickable Links**: Direct links to Jira issues
+- **No Dates**: Clean format without timestamps per user requirements
+
+## Current Results
+
+The system successfully extracts **CQDOC issues**.
+
+## Security Features
+
+- **Environment Variables**: All sensitive data stored in .env file
+- **No Hardcoded Credentials**: No sensitive information in source code
+- **Automatic Cleanup**: Screenshots and temporary files automatically deleted
+- **SSL/TLS Support**: Secure email transmission
 
 ## Troubleshooting
 
-If the tool isn't working properly in Cursor:
+### Common Issues
 
-1. Verify your credentials are correctly set in your .env folder
-2. Try running `npm run start` to check if JIRA authentication is successful.
+1. **Environment Variables Not Loading**
+   - Ensure .env file is in UTF-8 encoding
+   - Check file path and permissions
+   - Verify all required variables are set
+
+2. **Authentication Issues**
+   - Verify JIRA_USERNAME and JIRA_PASSWORD
+   - Check Okta authentication flow
+   - Ensure network connectivity to Adobe systems
+
+3. **Email Delivery Issues**
+   - Verify SMTP settings
+   - Check email credentials
+   - Ensure corporate network access
+
+4. **Issue Extraction Problems**
+   - Verify board access permissions
+   - Check RapidView ID (44313)
+   - Ensure board contains issues
+
+## Development
+
+### Building
+```bash
+npm run build
+```
+
+### Running
+```bash
+npm run start
+```
+
+### Dependencies
+- **puppeteer**: Web scraping and automation
+- **nodemailer**: Email sending
+- **jira-client**: Jira API client (backup)
+- **axios**: HTTP requests
+- **dotenv**: Environment variable management
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Support
+
+For issues or questions, please check the troubleshooting section above or contact the development team.
